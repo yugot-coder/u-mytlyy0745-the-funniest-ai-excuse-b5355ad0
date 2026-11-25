@@ -22,6 +22,34 @@ EXCUSE = (
 MAX_CHARS = 200
 
 
+def verify_written_bytes(raw: bytes) -> str:
+    """Byte-exact read-back verification: the bytes on disk must have
+    the same length as the intended excuse's UTF-8 encoding (no
+    trailing newline may sneak in), be byte-identical to it, hash to
+    the same sha256 digest, decode back to the excuse, and still sit
+    inside the 1..200 character gate. Returns the verified text."""
+    intended = EXCUSE.encode("utf-8")
+    if len(raw) != len(intended):
+        raise SystemExit("read-back byte length mismatch")
+    if raw != intended:
+        raise SystemExit("read-back bytes differ from the intended excuse")
+    digest = hashlib.sha256(raw).hexdigest()
+    expected_digest = hashlib.sha256(intended).hexdigest()
+    if digest != expected_digest:
+        raise SystemExit(
+            f"digest mismatch after write: got {digest}, "
+            f"expected {expected_digest}"
+        )
+    text = raw.decode("utf-8")
+    if text != EXCUSE:
+        raise SystemExit("read-back text differs from the intended excuse")
+    if not 1 <= len(text) <= MAX_CHARS:
+        raise SystemExit(
+            f"written file is {len(text)} characters, must be 1..{MAX_CHARS}"
+        )
+    return text
+
+
 def main() -> None:
     # Length guard: the gate accepts 1..200 characters, not only whitespace.
     if not 1 <= len(EXCUSE) <= MAX_CHARS:
@@ -39,24 +67,12 @@ def main() -> None:
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(EXCUSE)  # exactly the text, no trailing newline
 
-    # Explicit read-back validation: what is on disk must be exactly the
-    # intended text, and its sha256 digest must match the expected one.
+    # Explicit read-back validation: what is on disk must be exactly
+    # the intended text, byte for byte, digest included.
     with open(path, "rb") as f:
         raw = f.read()
+    text = verify_written_bytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
-    expected_digest = hashlib.sha256(EXCUSE.encode("utf-8")).hexdigest()
-    if digest != expected_digest:
-        raise SystemExit(
-            f"digest mismatch after write: got {digest}, "
-            f"expected {expected_digest}"
-        )
-    text = raw.decode("utf-8")
-    if text != EXCUSE:
-        raise SystemExit("read-back text differs from the intended excuse")
-    if not 1 <= len(text) <= MAX_CHARS:
-        raise SystemExit(
-            f"written file is {len(text)} characters, must be 1..{MAX_CHARS}"
-        )
     print(f"wrote {len(text)} characters to {path}")
     print(f"sha256: {digest}")
 
